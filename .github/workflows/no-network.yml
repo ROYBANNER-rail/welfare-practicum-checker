@@ -1,0 +1,51 @@
+name: 외부 통신 검사
+
+# 이 도구는 네트워크 요청이 없어야 한다.
+# 코드가 바뀌어도 그 전제가 깨지지 않는지 자동으로 확인한다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 금지 패턴 검사
+        run: |
+          echo "네트워크·저장소 API 사용 여부를 검사합니다."
+          FAIL=0
+          for p in "fetch(" "XMLHttpRequest" "navigator.sendBeacon" "WebSocket" \
+                   "localStorage" "sessionStorage" "document.cookie" \
+                   "indexedDB" "importScripts" "<script src" "<link rel=\"stylesheet\" href=\"http"; do
+            if grep -qF "$p" index.html; then
+              echo "::error::금지 패턴 발견 — $p"
+              FAIL=1
+            else
+              echo "  OK  $p 없음"
+            fi
+          done
+          exit $FAIL
+
+      - name: CSP 선언 확인
+        run: |
+          if grep -q "default-src 'none'" index.html; then
+            echo "  OK  CSP default-src 'none' 선언됨"
+          else
+            echo "::error::CSP default-src 'none' 선언이 없습니다"
+            exit 1
+          fi
+
+      - name: 외부 호스트 참조 확인
+        run: |
+          HITS=$(grep -oE 'https?://[a-zA-Z0-9.-]+' index.html | sort -u || true)
+          if [ -n "$HITS" ]; then
+            echo "::warning::외부 URL 문자열이 있습니다 (링크일 수 있으니 확인 필요)"
+            echo "$HITS"
+          else
+            echo "  OK  외부 호스트 참조 없음"
+          fi
